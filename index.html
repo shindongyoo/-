@@ -1,0 +1,639 @@
+<!-- ... existing code ... -->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>운전면허 기능시험 시뮬레이터</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js Library CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #1e293b;
+            user-select: none;
+        }
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        /* Mobile Touch Controls */
+        .touch-btn {
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen overflow-hidden bg-slate-900 text-slate-100">
+
+    <!-- Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- HUD Overlay -->
+    <div id="hud-layer" class="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between p-4 md:p-6">
+        <!-- Top HUD Bar -->
+        <div class="flex justify-between items-start gap-4">
+            <div class="bg-slate-900/80 backdrop-blur border border-slate-700/60 p-3 md:p-4 rounded-2xl shadow-xl max-w-xs md:max-w-md">
+                <div class="text-xs font-bold text-amber-400 mb-1">현재 목표</div>
+                <div id="hud-guide" class="text-sm md:text-base font-extrabold text-white">① 출발선에서 우측으로 가세요</div>
+            </div>
+            
+            <div class="bg-slate-900/80 backdrop-blur border border-slate-700/60 px-4 py-3 rounded-2xl shadow-xl flex items-center gap-3">
+                <span class="text-xs font-bold text-slate-400">남은 시간</span>
+                <span id="hud-timer" class="font-mono text-xl md:text-2xl font-black text-emerald-400">03:00</span>
+            </div>
+        </div>
+
+        <!-- Failure Banner -->
+        <div id="center-alert" class="self-center bg-red-600/90 text-white px-6 py-3 rounded-full font-black text-lg shadow-2xl opacity-0 transition-opacity duration-300 transform -translate-y-4">
+            🚨 충돌! 출발선으로 돌아갑니다.
+        </div>
+
+        <!-- Touch Controls (Mobile) -->
+        <div class="md:hidden flex justify-between items-end pointer-events-auto pb-4 px-2">
+            <!-- Steering Left/Right -->
+            <div class="flex gap-3">
+                <button id="btn-left" class="touch-btn w-16 h-16 bg-slate-800/80 border border-slate-600 rounded-2xl flex items-center justify-center text-2xl active:bg-amber-500 shadow-lg">⬅️</button>
+                <button id="btn-right" class="touch-btn w-16 h-16 bg-slate-800/80 border border-slate-600 rounded-2xl flex items-center justify-center text-2xl active:bg-amber-500 shadow-lg">➡️</button>
+            </div>
+            <!-- Throttle/Reverse -->
+            <div class="flex flex-col gap-3">
+                <button id="btn-up" class="touch-btn w-16 h-16 bg-slate-800/80 border border-slate-600 rounded-2xl flex items-center justify-center text-2xl active:bg-emerald-500 shadow-lg">⬆️</button>
+                <button id="btn-down" class="touch-btn w-16 h-16 bg-slate-800/80 border border-slate-600 rounded-2xl flex items-center justify-center text-2xl active:bg-red-500 shadow-lg">⬇️</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Menu Overlay -->
+    <div id="screen-main" class="absolute inset-0 bg-slate-950/80 backdrop-blur-md z-30 flex flex-col items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700/60 p-8 rounded-3xl max-w-md w-full shadow-2xl text-center space-y-6">
+            <div class="space-y-2">
+                <div class="text-5xl mb-2">🚘</div>
+                <h1 class="text-2xl font-black text-white tracking-tight">운전면허 기능시험 시뮬레이터</h1>
+                <p class="text-slate-400 text-xs">연석 테두리와 파스텔 잔디 사이의 S자 및 T자 코스를 탈선 없이 완주하세요!</p>
+            </div>
+
+            <!-- Option Checkbox -->
+            <div class="bg-slate-800/50 border border-slate-700/50 p-4 rounded-2xl text-left space-y-2">
+                <label class="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" id="opt-reset-time" checked class="w-4 h-4 accent-emerald-500 rounded">
+                    <span class="text-xs font-bold text-slate-200">실패 시 제한시간(3분) 초기화</span>
+                </label>
+            </div>
+
+            <!-- Leaderboard -->
+            <div class="bg-slate-800/30 border border-slate-700/30 p-4 rounded-2xl">
+                <div class="text-xs font-bold text-slate-400 mb-2">🏆 TOP 3 명예의 전당 (클리어 시간)</div>
+                <div id="main-leaderboard-list" class="space-y-1">
+                    <div class="text-slate-500 italic text-xs">기록 없음</div>
+                </div>
+            </div>
+
+            <!-- Start Button -->
+            <button id="btn-start" type="button" class="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-95 text-white font-black text-lg rounded-2xl shadow-lg shadow-emerald-900/40 transition pointer-events-auto cursor-pointer">
+                도전하기 🚀
+            </button>
+        </div>
+    </div>
+
+    <!-- Clear Overlay -->
+    <div id="screen-clear" class="hidden absolute inset-0 bg-slate-950/90 backdrop-blur-md z-30 flex-col items-center justify-center p-4">
+        <div class="bg-slate-900 border border-emerald-500/30 p-8 rounded-3xl max-w-md w-full shadow-2xl text-center space-y-6">
+            <div class="text-5xl">🎉</div>
+            <div class="space-y-1">
+                <h2 class="text-2xl font-black text-white">기능시험 합격!</h2>
+                <p class="text-slate-400 text-xs">축하합니다! 완벽하게 코스를 완주하셨습니다.</p>
+            </div>
+
+            <div class="bg-emerald-950/40 border border-emerald-500/20 p-4 rounded-2xl">
+                <div class="text-xs font-bold text-emerald-400">소요 시간</div>
+                <div id="clear-record-time" class="text-3xl font-mono font-black text-white mt-1">00:00</div>
+            </div>
+
+            <div class="bg-slate-800/30 border border-slate-700/30 p-4 rounded-2xl">
+                <div class="text-xs font-bold text-slate-400 mb-2">🏆 명예의 전당</div>
+                <div id="clear-leaderboard-list" class="space-y-1">
+                    <div class="text-slate-500 italic text-xs">기록 없음</div>
+                </div>
+            </div>
+
+            <button id="btn-to-main" type="button" class="w-full py-3.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-bold rounded-2xl transition pointer-events-auto cursor-pointer">
+                메인 화면으로
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- GAME CONFIG & STATE ---
+        const CONFIG = {
+            carWidth: 1.8,
+            carLength: 3.6,
+            carSpeed: 0.22,
+            carReverseSpeed: 0.12,
+            turnSpeed: 0.04,
+            friction: 0.96,
+            maxTime: 180
+        };
+
+        let scene, camera, renderer;
+        let carMesh, coinMesh;
+        let colliders = [];
+
+        let carPos = { x: -18, y: 0.3, z: 24 };
+        let carYaw = Math.PI / 2; // Right (+X)
+        let carSpeed = 0;
+
+        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+
+        const state = {
+            isRunning: false,
+            timeLeft: CONFIG.maxTime,
+            elapsedTime: 0,
+            checkpointIndex: 0,
+            timerInterval: null,
+            resetTimeOnFail: true
+        };
+
+        const checkpoints = [
+            { x: -5, z: 24, radius: 4, text: "① 출발선에서 우측으로 가세요" },
+            { x: 19, z: 20, radius: 4, text: "② 우측 긴 S자 코스로 진입하세요" },
+            { x: 23, z: 0, radius: 4, text: "② S자 중반 곡선 라인을 조심하세요" },
+            { x: 19, z: -20, radius: 4, text: "② S자 코스를 빠져나오세요" },
+            { x: -16, z: 4, radius: 4, text: "③ T자 코스 진입로로 들어오세요" },
+            { x: -28, z: -4, radius: 3.5, text: "③ T자 주차 포켓에 후진 주차하세요" },
+            { x: -16, z: 16, radius: 4, text: "④ 교차로를 지나 아래쪽 복귀선으로 가세요" },
+            { x: -18, z: 24, radius: 4, text: "⑤ 완주! 도착선을 통과하세요" }
+        ];
+
+        // --- THREE.JS ENGINE SETUP ---
+        function initGraphics() {
+            if (typeof THREE === 'undefined') {
+                console.error("Three.js not loaded!");
+                return false;
+            }
+
+            const container = document.getElementById('canvas-container');
+            if (!container) return false;
+            container.innerHTML = '';
+            
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x374151);
+
+            const width = window.innerWidth || 800;
+            const height = window.innerHeight || 600;
+            const aspect = width / height;
+            const d = 32;
+            camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 1000);
+            camera.position.set(0, 50, 0);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(width, height);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            dirLight.position.set(20, 40, 20);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            return true;
+        }
+
+        function buildTrack() {
+            colliders = [];
+            // Expand Asphalt Ground Surface
+            const groundGeo = new THREE.PlaneGeometry(120, 100);
+            const groundMat = new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.8 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            createCheckeredLineMarking(-18, 24, 3, 8);
+
+            // Outer Perimeter Walls/Curbs (Restored complete boundary encirclement)
+            createGrassIsland(0, -32, 74, 2);
+            createGrassIsland(0, 32, 74, 2);
+            createGrassIsland(-36, 0, 2, 66);
+            createGrassIsland(36, 0, 2, 66);
+
+            buildTStyleGrassIslands();
+            buildCurvedSCurveWalls();
+        }
+
+        function createCheckeredLineMarking(x, z, width, length) {
+            const group = new THREE.Group();
+            const cols = 2;
+            const rows = 8;
+            const tileW = width / cols;
+            const tileL = length / rows;
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const isWhite = (r + c) % 2 === 0;
+                    const geo = new THREE.PlaneGeometry(tileW, tileL);
+                    const mat = new THREE.MeshBasicMaterial({ color: isWhite ? 0xffffff : 0x111111, side: THREE.DoubleSide });
+                    const tile = new THREE.Mesh(geo, mat);
+                    tile.rotation.x = -Math.PI / 2;
+                    tile.position.set((c - cols / 2 + 0.5) * tileW, 0.05, (r - rows / 2 + 0.5) * tileL);
+                    group.add(tile);
+                }
+            }
+            group.position.set(x, 0, z);
+            scene.add(group);
+        }
+
+        function createGrassIsland(x, z, width, depth) {
+            const grassGeo = new THREE.BoxGeometry(width, 0.4, depth);
+            const grassMat = new THREE.MeshStandardMaterial({ color: 0xa8d5ba, roughness: 0.7 });
+            const grass = new THREE.Mesh(grassGeo, grassMat);
+            grass.position.set(x, 0.2, z);
+            grass.receiveShadow = true;
+            scene.add(grass);
+
+            const curbGeo = new THREE.BoxGeometry(width + 0.6, 0.45, depth + 0.6);
+            const curbMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 });
+            const curb = new THREE.Mesh(curbGeo, curbMat);
+            curb.position.set(x, 0.15, z);
+            scene.add(curb);
+
+            colliders.push({
+                isBox: true,
+                minX: x - (width + 0.6) / 2,
+                maxX: x + (width + 0.6) / 2,
+                minZ: z - (depth + 0.6) / 2,
+                maxZ: z + (depth + 0.6) / 2
+            });
+        }
+
+        function createCurbPin(x, z) {
+            const geo = new THREE.CylinderGeometry(0.5, 0.5, 0.5, 12);
+            const mat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, 0.25, z);
+            scene.add(mesh);
+
+            const innerGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.52, 12);
+            const innerMat = new THREE.MeshStandardMaterial({ color: 0xa8d5ba, roughness: 0.7 });
+            const inner = new THREE.Mesh(innerGeo, innerMat);
+            inner.position.set(x, 0.26, z);
+            scene.add(inner);
+
+            colliders.push({ isBox: false, x: x, z: z, r: 0.5 });
+        }
+
+        function buildTStyleGrassIslands() {
+            // Center Main Island
+            createGrassIsland(2, -4, 16, 26);
+
+            // Refined T-parking bay matching the exact proportions of the reference image:
+            // Top-left island block (above parking pocket)
+            createGrassIsland(-26, -18, 18, 10);
+            // Bottom-left island block (below parking pocket, leaving a standard vertical road lane)
+            createGrassIsland(-26, 12, 18, 10);
+            // Outer left back wall island (forming the deep parking pocket recess where number ③ is located)
+            createGrassIsland(-33, -4, 4, 16);
+        }
+
+        function buildCurvedSCurveWalls() {
+            const laneWidth = 10;
+            const numSegments = 45;
+            for (let i = 0; i <= numSegments; i++) {
+                let t = i / numSegments;
+                let z = 22 - t * 44;
+                let xCenter = 20 + Math.sin(t * Math.PI * 2) * 4.5;
+                createCurbPin(xCenter - laneWidth / 2, z);
+                createCurbPin(xCenter + laneWidth / 2, z);
+            }
+        }
+
+        function createCarMesh() {
+            const group = new THREE.Group();
+            const bodyGeo = new THREE.BoxGeometry(CONFIG.carWidth, 0.8, CONFIG.carLength);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.3 });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 0.5;
+            body.castShadow = true;
+            group.add(body);
+
+            const cabinGeo = new THREE.BoxGeometry(CONFIG.carWidth * 0.85, 0.6, CONFIG.carLength * 0.5);
+            const cabinMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.2 });
+            const cabin = new THREE.Mesh(cabinGeo, cabinMat);
+            cabin.position.set(0, 1.1, -0.2);
+            cabin.castShadow = true;
+            group.add(cabin);
+
+            const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 16);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
+            const wheelPositions = [
+                [-0.85, 0.35, 1.0], [0.85, 0.35, 1.0],
+                [-0.85, 0.35, -1.0], [0.85, 0.35, -1.0]
+            ];
+            wheelPositions.forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                group.add(wheel);
+            });
+
+            scene.add(group);
+            return group;
+        }
+
+        function createCoinMesh() {
+            const geo = new THREE.CylinderGeometry(1.2, 1.2, 0.3, 24);
+            const mat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.2 });
+            const coin = new THREE.Mesh(geo, mat);
+            coin.rotation.x = Math.PI / 2;
+            coin.position.y = 1.0;
+            scene.add(coin);
+            return coin;
+        }
+
+        function resetCar() {
+            carPos = { x: -18, y: 0.3, z: 24 };
+            carYaw = Math.PI / 2;
+            carSpeed = 0;
+            if (carMesh) {
+                carMesh.position.set(carPos.x, carPos.y, carPos.z);
+                carMesh.rotation.y = carYaw;
+            }
+        }
+
+        function updateCheckpoint() {
+            const cp = checkpoints[state.checkpointIndex];
+            if (coinMesh && cp) {
+                coinMesh.position.set(cp.x, 1.0, cp.z);
+                const guideElem = document.getElementById('hud-guide');
+                if (guideElem) guideElem.textContent = cp.text;
+            }
+        }
+
+        function triggerFail() {
+            const alertElem = document.getElementById('center-alert');
+            if (alertElem) {
+                alertElem.style.opacity = '1';
+                setTimeout(() => { alertElem.style.opacity = '0'; }, 1000);
+            }
+
+            if (state.resetTimeOnFail) {
+                state.timeLeft = CONFIG.maxTime;
+                state.elapsedTime = 0;
+            }
+            state.checkpointIndex = 0;
+            resetCar();
+            updateCheckpoint();
+        }
+
+        function checkCollisions() {
+            const halfW = CONFIG.carWidth / 2;
+            const halfL = CONFIG.carLength / 2;
+
+            for (const col of colliders) {
+                if (col.isBox) {
+                    if (carPos.x + halfW > col.minX && carPos.x - halfW < col.maxX &&
+                        carPos.z + halfL > col.minZ && carPos.z - halfL < col.maxZ) {
+                        return true;
+                    }
+                } else {
+                    const dx = carPos.x - col.x;
+                    const dz = carPos.z - col.z;
+                    if (Math.sqrt(dx * dx + dz * dz) < (col.r + halfW)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function checkCheckpoint() {
+            const cp = checkpoints[state.checkpointIndex];
+            if (!cp) return;
+
+            const dx = carPos.x - cp.x;
+            const dz = carPos.z - cp.z;
+            if (Math.sqrt(dx * dx + dz * dz) < cp.radius) {
+                state.checkpointIndex++;
+                if (state.checkpointIndex >= checkpoints.length) {
+                    gameClear();
+                } else {
+                    updateCheckpoint();
+                }
+            }
+        }
+
+        function startGame() {
+            const optElem = document.getElementById('opt-reset-time');
+            state.resetTimeOnFail = optElem ? optElem.checked : true;
+            state.isRunning = true;
+            state.timeLeft = CONFIG.maxTime;
+            state.elapsedTime = 0;
+            state.checkpointIndex = 0;
+            resetCar();
+            updateCheckpoint();
+
+            const mainScreen = document.getElementById('screen-main');
+            const clearScreen = document.getElementById('screen-clear');
+            if (mainScreen) mainScreen.style.display = 'none';
+            if (clearScreen) clearScreen.style.display = 'none';
+
+            if (state.timerInterval) clearInterval(state.timerInterval);
+            state.timerInterval = setInterval(() => {
+                if (!state.isRunning) return;
+                state.timeLeft--;
+                state.elapsedTime++;
+
+                const min = String(Math.floor(state.timeLeft / 60)).padStart(2, '0');
+                const sec = String(state.timeLeft % 60).padStart(2, '0');
+                const timerElem = document.getElementById('hud-timer');
+                if (timerElem) timerElem.textContent = `${min}:${sec}`;
+
+                if (state.timeLeft <= 0) {
+                    triggerFail();
+                }
+            }, 1000);
+        }
+
+        function gameClear() {
+            state.isRunning = false;
+            if (state.timerInterval) clearInterval(state.timerInterval);
+
+            const m = String(Math.floor(state.elapsedTime / 60)).padStart(2, '0');
+            const s = String(state.elapsedTime % 60).padStart(2, '0');
+            const recordElem = document.getElementById('clear-record-time');
+            if (recordElem) recordElem.textContent = `${m}:${s}`;
+
+            saveRecord(state.elapsedTime);
+
+            const clearScreen = document.getElementById('screen-clear');
+            if (clearScreen) clearScreen.style.display = 'flex';
+        }
+
+        function giveUp() {
+            state.isRunning = false;
+            if (state.timerInterval) clearInterval(state.timerInterval);
+
+            const clearScreen = document.getElementById('screen-clear');
+            const mainScreen = document.getElementById('screen-main');
+            if (clearScreen) clearScreen.style.display = 'none';
+            if (mainScreen) mainScreen.style.display = 'flex';
+        }
+
+        function getRecords() {
+            try {
+                return JSON.parse(localStorage.getItem('driving_test_records') || '[]');
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function saveRecord(seconds) {
+            let records = getRecords();
+            records.push(seconds);
+            records.sort((a, b) => a - b);
+            records = records.slice(0, 3);
+            try {
+                localStorage.setItem('driving_test_records', JSON.stringify(records));
+            } catch (e) {}
+            renderLeaderboards();
+        }
+
+        function renderLeaderboards() {
+            const records = getRecords();
+            const format = sec => `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+            
+            let html = '';
+            if (records.length === 0) {
+                html = '<div class="text-slate-500 italic text-xs">기록 없음</div>';
+            } else {
+                html = records.map((r, i) => `
+                    <div class="flex justify-between items-center text-xs font-mono font-bold ${i === 0 ? 'text-amber-400' : 'text-slate-300'}">
+                        <span>${i + 1}위</span>
+                        <span>${format(r)}</span>
+                    </div>
+                `).join('');
+            }
+
+            const mainList = document.getElementById('main-leaderboard-list');
+            const clearList = document.getElementById('clear-leaderboard-list');
+            if (mainList) mainList.innerHTML = html;
+            if (clearList) clearList.innerHTML = html;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (state.isRunning) {
+                if (keys.ArrowLeft) carYaw += CONFIG.turnSpeed * (carSpeed >= 0 ? 1 : -1);
+                if (keys.ArrowRight) carYaw -= CONFIG.turnSpeed * (carSpeed >= 0 ? 1 : -1);
+
+                if (keys.ArrowUp) carSpeed = Math.min(carSpeed + 0.015, CONFIG.carSpeed);
+                else if (keys.ArrowDown) carSpeed = Math.max(carSpeed - 0.01, -CONFIG.carReverseSpeed);
+                else carSpeed *= CONFIG.friction;
+
+                carPos.x += Math.sin(carYaw) * carSpeed;
+                carPos.z += Math.cos(carYaw) * carSpeed;
+
+                if (carMesh) {
+                    carMesh.position.set(carPos.x, carPos.y, carPos.z);
+                    carMesh.rotation.y = carYaw;
+                }
+
+                if (coinMesh) coinMesh.rotation.z += 0.03;
+
+                if (checkCollisions()) {
+                    triggerFail();
+                } else {
+                    checkCheckpoint();
+                }
+            }
+
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+        }
+
+        // Initialize application securely on DOM ready
+        function initApp() {
+            if (!initGraphics()) {
+                setTimeout(initApp, 200);
+                return;
+            }
+            buildTrack();
+            carMesh = createCarMesh();
+            coinMesh = createCoinMesh();
+            resetCar();
+            renderLeaderboards();
+
+            const btnStart = document.getElementById('btn-start');
+            if (btnStart) {
+                btnStart.onclick = function(e) {
+                    if (e) e.preventDefault();
+                    startGame();
+                };
+            }
+
+            const btnToMain = document.getElementById('btn-to-main');
+            if (btnToMain) {
+                btnToMain.onclick = function(e) {
+                    if (e) e.preventDefault();
+                    giveUp();
+                };
+            }
+
+            window.addEventListener('keydown', e => {
+                if (keys.hasOwnProperty(e.key)) keys[e.key] = true;
+            });
+            window.addEventListener('keyup', e => {
+                if (keys.hasOwnProperty(e.key)) keys[e.key] = false;
+            });
+
+            const setupTouchBtn = (id, keyName) => {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+                btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; });
+                btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
+                btn.addEventListener('mousedown', () => { keys[keyName] = true; });
+                btn.addEventListener('mouseup', () => { keys[keyName] = false; });
+            };
+
+            setupTouchBtn('btn-left', 'ArrowLeft');
+            setupTouchBtn('btn-right', 'ArrowRight');
+            setupTouchBtn('btn-up', 'ArrowUp');
+            setupTouchBtn('btn-down', 'ArrowDown');
+
+            window.addEventListener('resize', () => {
+                if (!renderer || !camera) return;
+                const aspect = window.innerWidth / window.innerHeight;
+                const d = 32;
+                camera.left = -d * aspect;
+                camera.right = d * aspect;
+                camera.top = d;
+                camera.bottom = -d;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            animate();
+        }
+
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            setTimeout(initApp, 100);
+        } else {
+            window.addEventListener('DOMContentLoaded', initApp);
+        }
+    </script>
+</body>
+</html>
